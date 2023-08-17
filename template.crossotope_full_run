@@ -1,0 +1,70 @@
+#!/bin/bash
+
+subj_id=SUBJECTID
+ses_id=SESID
+data_dir=DATADIR
+data_bucket=BUCKET
+run_dir=RUNDIR
+singularity=`which singularity`
+
+roi_dir="/home/faird/shared/projects/wlf-test/fr/output-half-HCP"
+config_file="/home/faird/shared/projects/wlf-test/fr/crossotope_mapping/config.json" 
+
+# pull down needed data and files from BIDS bucket
+if [ ! -d ${data_dir}/sub-${subj_id}/ses-${ses_id} ]; then
+	mkdir -p ${data_dir}/sub-${subj_id}/ses-${ses_id}
+	s3cmd get ${data_bucket}/sub-${subj_id}/ses-${ses_id}/func/sub-${subj_id}_ses-${ses_id}_task-rest_acq-PrismaSingleBand_bold_timeseries.dtseries.nii \
+	${data_dir}/sub-${subj_id}/ses-${ses_id}/ --recursive -v
+	s3cmd get ${data_bucket}/sub-${subj_id}/ses-${ses_id}/func/sub-${subj_id}_ses-${ses_id}_task-rest_acq-PrismaSingleBand_motion_mask.mat \
+	${data_dir}/sub-${subj_id}/ses-${ses_id}/ --recursive -v
+fi
+
+## TO DO
+
+temp_dtseries=${data_dir}/sub-${subj_id}/ses-${ses_id}/sub-${subj_id}_ses-${ses_id}_task-rest_acq-PrismaSingleBand_bold_timeseries.dtseries.nii
+temp_motion=${data_dir}/sub-${subj_id}/ses-${ses_id}/sub-${subj_id}_ses-${ses_id}_task-rest_acq-PrismaSingleBand_motion_mask.mat
+
+for roi_dir in ${rois_dir}/L_*/; do
+	echo "$roi_dir"
+    
+	bn=$(basename "$roi_dir")
+    mkdir -p "LRvalues_ALL_HCP_ROIs/${subj_id}/${bn}"
+                
+	env -i ${singularity} run \
+	-B ${ex_sub}/:/session \
+	-B ${roi_dir}:/input_rois \
+	-B ${MRE}:/matlab \
+	-B ${config_file}:/config.json \
+	-B LRvalues_ALL_HCP_ROIs/${subj_id}/${bn}:/output \
+	/home/faird/shared/projects/wlf-test/fr/crossotope_mapping/crossotope.sif	\
+	--roi_dir input_rois \
+	--n_samples 100 \
+	--matlab "$(which matlab)" \
+	--MRE matlab \
+	--json_config config.json \
+	--label ${bn} \
+	/session/{${dtseries},${motion}}   									
+done
+
+
+##FROM EXAMPLE
+# run cabinet 
+env -i ${singularity} run \
+-B ${data_dir}:/input \
+-B ${data_dir}/processed/cabinet:/output \
+-B ${run_dir}/license.txt:/opt/freesurfer/license.txt \
+/home/faird/shared/code/internal/pipelines/cabinet_container/cabinet_v2-4-0.sif \
+/input /output participant -jargs /home/cabinet/parameter-file-container.json -start prebibsnet -end postbibsnet -v 
+
+#push processed outputs to bucket
+s3cmd sync -F --recursive -v ${data_dir}/processed/cabinet/bibsnet/sub-${subj_id}/ses-${ses_id}/ s3://ROO/derivatives/bibsnet/sub-${subj_id}/ses-${ses_id}/
+
+#maryam
+s3cmd sync -F --recursive -v ${data_dir}/LRvalues_ALL_HCP_ROIs/ ${data_bucket}/LRvalues_ALL_HCP_ROIs/
+
+
+
+
+
+
+
