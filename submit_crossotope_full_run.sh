@@ -14,12 +14,12 @@ then
 
 else
       echo ""
-      echo "Submitting the following jobs for cabinet processing now: $array"
+      echo "Submitting the following jobs for crossotope processing now: $array"
       echo ""
 
-      cabinet=$(sbatch --parsable -a $array resources_cabinet_full_run.sh)
+      crossotope=$(sbatch --parsable -a $array resources_crossotope_full_run.sh)
 
-      echo "cabinet JOB ID: $cabinet"
+      echo "crossotope JOB ID: $crossotope"
 
       echo ""
       echo "Output logs will appear in output_logs folder. Use 'squeue -al --me' to monitor jobs."

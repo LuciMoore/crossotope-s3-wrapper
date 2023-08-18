@@ -7,60 +7,43 @@ data_bucket=BUCKET
 run_dir=RUNDIR
 singularity=`which singularity`
 
-roi_dir="/home/faird/shared/projects/wlf-test/fr/output-half-HCP"
+rois_dir="/home/faird/shared/projects/wlf-test/fr/output-half-HCP"
 config_file="/home/faird/shared/projects/wlf-test/fr/crossotope_mapping/config.json" 
+s3_derivs=${data_bucket}/derivatives/adhd_prisma/derivatives/abcd-hcp-pipeline
+MRE="/home/faird/shared/code/external/utilities/MATLAB_Runtime_R2019a_update9/v96/"
+
+dtseries_suffix=task-rest_acq-PrismaSingleBand_bold_timeseries.dtseries.nii
+motion_suffix=task-rest_acq-PrismaSingleBand_motion_mask.mat
+dtseries=sub-${subj_id}_ses-${ses-id}_${dtseries_suffix}
+motion=sub-${subj_id}_ses-${ses-id}_${motion_suffix}
 
 # pull down needed data and files from BIDS bucket
-if [ ! -d ${data_dir}/sub-${subj_id}/ses-${ses_id} ]; then
-	mkdir -p ${data_dir}/sub-${subj_id}/ses-${ses_id}
-	s3cmd get ${data_bucket}/sub-${subj_id}/ses-${ses_id}/func/sub-${subj_id}_ses-${ses_id}_task-rest_acq-PrismaSingleBand_bold_timeseries.dtseries.nii \
-	${data_dir}/sub-${subj_id}/ses-${ses_id}/ --recursive -v
-	s3cmd get ${data_bucket}/sub-${subj_id}/ses-${ses_id}/func/sub-${subj_id}_ses-${ses_id}_task-rest_acq-PrismaSingleBand_motion_mask.mat \
-	${data_dir}/sub-${subj_id}/ses-${ses_id}/ --recursive -v
-fi
+s3cmd sync ${s3_derivs}/sub-${subj_id}/ses-${ses-id}/func/sub-${subj_id}_ses-${ses-id}_${dtseries_suffix} ${data_dir}/${dtseries}
+s3cmd sync ${s3_derivs}/sub-${subj_id}/ses-${ses-id}/func/sub-${subj_id}_ses-${ses-id}_${motion_suffix} ${data_dir}/${motion}
 
-## TO DO
-
-temp_dtseries=${data_dir}/sub-${subj_id}/ses-${ses_id}/sub-${subj_id}_ses-${ses_id}_task-rest_acq-PrismaSingleBand_bold_timeseries.dtseries.nii
-temp_motion=${data_dir}/sub-${subj_id}/ses-${ses_id}/sub-${subj_id}_ses-${ses_id}_task-rest_acq-PrismaSingleBand_motion_mask.mat
+for i in `ls ${rois_dir}/ | awk '{print $2}'`; do
+	echo "$roi_dir"   
+done 
 
 for roi_dir in ${rois_dir}/L_*/; do
-	echo "$roi_dir"
-    
+	echo "$roi_dir"    
 	bn=$(basename "$roi_dir")
-    mkdir -p "LRvalues_ALL_HCP_ROIs/${subj_id}/${bn}"
+    mkdir -p "LRvalues_ALL_HCP_ROIs/${subj_id}/${bn}" #probably want to make this in tmp space
                 
 	env -i ${singularity} run \
-	-B ${ex_sub}/:/session \
+	-B ${data_dir}:/input \
 	-B ${roi_dir}:/input_rois \
 	-B ${MRE}:/matlab \
 	-B ${config_file}:/config.json \
 	-B LRvalues_ALL_HCP_ROIs/${subj_id}/${bn}:/output \
-	/home/faird/shared/projects/wlf-test/fr/crossotope_mapping/crossotope.sif	\
-	--roi_dir input_rois \
-	--n_samples 100 \
-	--matlab "$(which matlab)" \
-	--MRE matlab \
-	--json_config config.json \
-	--label ${bn} \
-	/session/{${dtseries},${motion}}   									
+	/home/faird/shared/projects/wlf-test/fr/crossotope_mapping/crossotope.sif analysis \
+	--roi_dir /input_rois --n_samples 100 --matlab "$(which matlab)" --MRE /matlab \
+	--json_config /config.json --label ${bn} \
+	/input/{${dtseries},${motion}}  									
 done
 
-
-##FROM EXAMPLE
-# run cabinet 
-env -i ${singularity} run \
--B ${data_dir}:/input \
--B ${data_dir}/processed/cabinet:/output \
--B ${run_dir}/license.txt:/opt/freesurfer/license.txt \
-/home/faird/shared/code/internal/pipelines/cabinet_container/cabinet_v2-4-0.sif \
-/input /output participant -jargs /home/cabinet/parameter-file-container.json -start prebibsnet -end postbibsnet -v 
-
 #push processed outputs to bucket
-s3cmd sync -F --recursive -v ${data_dir}/processed/cabinet/bibsnet/sub-${subj_id}/ses-${ses_id}/ s3://ROO/derivatives/bibsnet/sub-${subj_id}/ses-${ses_id}/
-
-#maryam
-s3cmd sync -F --recursive -v ${data_dir}/LRvalues_ALL_HCP_ROIs/ ${data_bucket}/LRvalues_ALL_HCP_ROIs/
+#s3cmd sync -F --recursive -v ${data_dir}/LRvalues_ALL_HCP_ROIs ${data_bucket}/sub-${subj_id}/ses-${ses_id}/
 
 
 
